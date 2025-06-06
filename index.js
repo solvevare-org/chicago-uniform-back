@@ -42,7 +42,7 @@ app.use('/uploads', express.static(path.join(__dirname, '../public/uploads')));
 // MongoDB connection
  const mongoose = require('mongoose');
 
-mongoose.connect('mongodb://admin:yourStrongPassword@localhost:27017/myNewDatabase?authSource=admin')
+mongoose.connect('mongodb://myuser:MySecurePass456!@localhost:27017/mysecuredb?authSource=mysecuredb')
   .then(() => {
     console.log('MongoDB connected');
   })
@@ -51,10 +51,10 @@ mongoose.connect('mongodb://admin:yourStrongPassword@localhost:27017/myNewDataba
   });
 const productSchema = new mongoose.Schema({}, { strict: false });
 const styleSchema = new mongoose.Schema({}, { strict: false });
-
+const brandSchema = new mongoose.Schema({}, { strict: false });  
 const Product = mongoose.model('Product', productSchema);
 const Style = mongoose.model('Style', styleSchema);
-
+const Brand = mongoose.model('Brand', brandSchema);
 const ACCOUNT_NUMBER = '13947';
 const API_KEY = 'c277e887-cae2-457b-9f20-c40dd3ea40b5';
 const FILE_PATH = path.join(__dirname, 'products.json');
@@ -110,7 +110,29 @@ async function fetchProductData() {
     console.error('Error fetching product data:', error);
   }
 }
+ async function fetchBrandData() {
+  try {
+    const url = `https://api.ssactivewear.com/v2/Brands/`;
+    const response = await fetch(url, {
+      headers: {
+        'Authorization': 'Basic ' + Buffer.from(`${ACCOUNT_NUMBER}:${API_KEY}`).toString('base64'),
+        'Accept': 'application/json',
+      }
+    });
 
+    if (!response.ok) {
+      console.error(`Failed to fetch styles: ${response.status} ${response.statusText}`);
+      return;
+    }
+
+    const brand = await response.json();
+    await Brand.deleteMany({});
+    await Brand.insertMany(brand);
+    console.log(`Inserted ${brand.length} brands into MongoDB`);
+  } catch (error) {
+    console.error('Error fetching btands data:', error);
+  }
+}
 
 async function fetchStyleData() {
   try {
@@ -140,11 +162,11 @@ async function fetchStyleData() {
 // Initial fetch
 fetchProductData();
 fetchStyleData();
-
+fetchBrandData();
 // Refresh every 10 minutes
 setInterval(fetchProductData, 10 * 60 * 1000);
 setInterval(fetchStyleData, 10 * 60 * 1000);
-
+setInterval(fetchBrandData, 10 * 60 * 1000);
 // API endpoint to serve paginated styles
 // API endpoint to check if products exist for a specific style ID
 app.get('/api/products/style/:styleId', async (req, res) => {
@@ -418,6 +440,15 @@ router.post('cc:sku', async (req, res) => {
     return res.status(500).json({ error: 'Internal server error', details: err.message });
   }
 });
+app.get('/api/brands', async (req, res) => {
+  try {
+    const brands = await Brand.find({});
+    res.json({ count: brands.length, brands });
+  } catch (error) {
+    console.error('Error fetching brands:', error);
+    res.status(500).json({ error: 'MongoDB query failed' });
+  }
+});
 app.get('/api/styles/by-base-category/:category', async (req, res) => {
   const inputCategory = decodeURIComponent(req.params.category).trim();
 
@@ -591,6 +622,12 @@ app.use(router);
 // Serve static folders for processed images and uploads
 app.use('/output', express.static(path.join(__dirname, '../public/output')));
 app.use('/uploads', express.static(path.join(__dirname, '../public/uploads')));
+
+const loginRouter = require('./routes/login');
+app.use('/api/auth', loginRouter);
+
+const ordersRouter = require('./routes/orders');
+app.use('/api/orders', ordersRouter);
 
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
